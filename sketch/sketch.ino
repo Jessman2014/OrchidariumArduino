@@ -12,14 +12,10 @@ SCK  -> A5
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_TSL2561_U.h>
-#include <Time.h>
+#include <TimeLib.h>
 
-// time sync to PC is HEADER followed by Unix time_t as ten ASCII digits
-#define TIME_MSG_LEN 11 
-// Header tag for serial time sync message
-#define TIME_HEADER 'T' 
-// ASCII bell character requests a time sync message 
-#define TIME_REQUEST 7 
+#define TIME_HEADER  "T"   // Header tag for serial time sync message
+#define TIME_REQUEST  7    // ASCII bell character requests a time sync message 
 
 //variables for storing values
 float tempC = 0;
@@ -27,10 +23,13 @@ float tempF = 0;
 float humidity = 0;
 int relayPwr = A0;
 int mainLED = 3;
-int coolMist = 5;
+int coolMist = 3;
+int coolMistFan = 9;
 int warmMist = 6;
 int heatLamp = 7;
 int bonsai = 8;
+
+int coolMistValue = LOW;
 
 //Create an instance of the SHT1X sensor
 SHT1x sht15(12, 13);//Data, SCK
@@ -43,6 +42,8 @@ void setup()
   pinMode(relayPwr, OUTPUT);
   digitalWrite(relayPwr, HIGH);
 
+  //setSyncProvider( requestSync);  //set function to call when sync required
+   //Serial.println("Waiting for sync message");
   Serial.println("Light Sensor Test"); Serial.println("");
   
   /* Initialise the sensor */
@@ -55,14 +56,14 @@ void setup()
   
   /* Setup the sensor gain and integration time */
   configureSensor();
-  configureRelays();
+  configureRelaysAndFans();
 }
 //-------------------------------------------------------------------------------------------
 void loop()
 {
   readSensor();
-  findTime();
-
+  //findTime();
+  checkConditionsForRelays();
   delay(1000);
 }
 //-------------------------------------------------------------------------------------------
@@ -123,13 +124,19 @@ void configureSensor()
 }
 
 
-void configureRelays()
+void configureRelaysAndFans()
 {
-  pinMode(mainLED, OUTPUT);
+  //pinMode(mainLED, OUTPUT);
   pinMode(coolMist, OUTPUT);
+  pinMode(coolMistFan, OUTPUT);
   pinMode(warmMist, OUTPUT);
   pinMode(heatLamp, OUTPUT);
   pinMode(bonsai, OUTPUT);
+  //digitalWrite(mainLED, LOW);
+  digitalWrite(coolMist, LOW);
+  digitalWrite(warmMist, LOW);
+  digitalWrite(heatLamp, LOW);
+  digitalWrite(bonsai, LOW);
 }
 
 void findTime()
@@ -141,7 +148,9 @@ void findTime()
   if (timeStatus() == timeNotSet)
     Serial.println("waiting for sync message");
   else
-    digitalClockDisplay();
+  {
+    //checkRelays
+  }
 }
 
 void digitalClockDisplay() 
@@ -169,25 +178,41 @@ void printDigits(int digits) {
 
 void processSyncMessage() 
 {
- // if time sync available from serial port, update time and return true
-  while (Serial.available() >= TIME_MSG_LEN ) 
+ unsigned long pctime;
+  const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
+
+  if(Serial.find(TIME_HEADER)) {
+     pctime = Serial.parseInt();
+     if( pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
+       setTime(pctime); // Sync Arduino clock to the time received on the serial port
+     }
+  }
+}
+
+time_t requestSync()
+{
+  Serial.write(TIME_REQUEST);
+  return 0; // the time will be sent later in response to serial mesg
+}
+
+void checkConditionsForRelays()
+{
+  if (coolMistValue == HIGH)
   {
-    // time message consists of header & 10 ASCII digits
-    char c = Serial.read() ;
-    Serial.print(c);
-    if ( c == TIME_HEADER ) 
+    if (humidity > 80)
     {
-      time_t pctime = 0;
-      for (int i = 0; i < TIME_MSG_LEN - 1; i++) 
-      {
-        c = Serial.read();
-        if ( c >= '0' && c <= '9') 
-        {
-          pctime = (10 * pctime) + (c - '0') ; // convert digits to a number
-        }
-      }
-      setTime(pctime); 
-      // Sync Arduino clock to the time received on the serial port
+        digitalWrite(coolMist, LOW);
+        digitalWrite(coolMistFan, LOW);
+        coolMistValue == LOW;
+    }
+  }
+  else
+  {
+    if (humidity < 70)
+    {
+      digitalWrite(coolMist, HIGH);
+      digitalWrite(coolMistFan, HIGH);
+      coolMistValue = HIGH;
     }
   }
 }
