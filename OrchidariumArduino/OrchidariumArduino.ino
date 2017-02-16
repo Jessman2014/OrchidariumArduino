@@ -214,9 +214,9 @@ void checkConditionsForRelays()
 {
 	// cool mist humidifier
 	if (shouldCoolMistHumidifierBeOn())
-		turnRelayOn(coolMist);
+		turnCoolMistOn();
 	else
-		turnRelayOff(coolMist);
+		turnCoolMistOff();
 
 	// heat lamp
 	if (shouldHeatLampBeOn())
@@ -337,4 +337,16 @@ void turnRelayOff(int pinNum)
 bool isRelayOn(int pinNum)
 {
 	return digitalRead(pinNum) == LOW;
+}
+
+void turnCoolMistOn()
+{
+	turnRelayOn(coolMist);
+	digitalWrite(coolMistFan, HIGH);
+}
+
+void turnCoolMistOff()
+{
+	turnRelayOff(coolMist);
+	digitalWrite(coolMistFan, LOW);
 }
