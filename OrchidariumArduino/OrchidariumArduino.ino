@@ -13,6 +13,7 @@ SCK  -> A5
 #include <Adafruit_Sensor.h>
 #include <Adafruit_TSL2561_U.h>
 #include <TimeLib.h>
+#include <ArduinoJson.h>
 
 #define TIME_HEADER  "T"   // Header tag for serial time sync message
 #define TIME_REQUEST  7    // ASCII bell character requests a time sync message 
@@ -21,6 +22,7 @@ SCK  -> A5
 float tempC = 0;
 float tempF = 0;
 float humidity = 0;
+float light = 0;
 int relayPwr = A0;
 int mainLED = 5;
 int coolMist = 3;
@@ -33,7 +35,8 @@ int ledFan = 10;
 //Create an instance of the SHT1X sensor
 SHT1x sht15(12, 13);//Data, SCK
 Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
-//delacre output pins for powering the sensor
+StaticJsonBuffer<200> jsonBuffer;
+JsonObject& root = jsonBuffer.createObject();
 
 void setup()
 {
@@ -41,17 +44,17 @@ void setup()
 	pinMode(relayPwr, OUTPUT);
 	digitalWrite(relayPwr, HIGH);
 
-	//setSyncProvider( requestSync);  //set function to call when sync required
-	//Serial.println("Waiting for sync message");
-	Serial.println("Light Sensor Test"); Serial.println("");
+	//Serial.println("Light Sensor Test"); Serial.println("");
 
-	/* Initialise the sensor */
-	if (!tsl.begin())
+	// Initialise the light sensor
+	tsl.begin();
+	/*if (!tsl.begin())
 	{
-		/* There was a problem detecting the TSL2561 ... check your connections */
+		// There was a problem detecting the TSL2561 ... check your connections 
 		Serial.print("Ooops, no TSL2561 detected ... Check your wiring or I2C ADDR!");
 		while (1);
 	}
+	*/
 
 	/* Setup the sensor gain and integration time */
 	configureSensor();
@@ -108,7 +111,9 @@ void loop()
 	readSensor();
 	findTime();
 	checkConditionsForRelays();
-	delay(1000);
+	root.printTo(Serial);
+	Serial.println();
+	delay(5000);
 }
 //-------------------------------------------------------------------------------------------
 void readSensor()
@@ -117,30 +122,34 @@ void readSensor()
 	tempC = sht15.readTemperatureC();
 	tempF = sht15.readTemperatureF();
 	humidity = sht15.readHumidity();
-	Serial.print(" Temp = ");
+	root["tempF"] = tempF;
+	root["humidity"] = humidity;
+	/*Serial.print(" Temp = ");
 	Serial.print(tempF);
 	Serial.print("F, ");
 	Serial.print(tempC);
 	Serial.println("C");
 	Serial.print(" Humidity = ");
 	Serial.print(humidity);
-	Serial.println("%");
+	Serial.println("%");*/
 
 	/* Get a new sensor event */
 	sensors_event_t event;
 	tsl.getEvent(&event);
 
 	/* Display the results (light is measured in lux) */
-	if (event.light)
-	{
-		Serial.print(event.light); Serial.println(" lux");
-	}
-	else
-	{
-		/* If event.light = 0 lux the sensor is probably saturated
-		and no reliable data could be generated! */
-		Serial.println("Sensor overload");
-	}
+		light = event.light;
+		root["light"] = light;
+	//if (event.light)
+	//{
+	//	Serial.print(event.light); Serial.println(" lux");
+	//}
+	//else
+	//{
+	//	/* If event.light = 0 lux the sensor is probably saturated
+	//	and no reliable data could be generated! */
+	//	Serial.println("Sensor overload");
+	//}
 }
 
 void findTime()
@@ -153,7 +162,9 @@ void findTime()
 		Serial.println("waiting for sync message");
 	else
 	{
-		//checkRelays
+		//digitalClockDisplay();
+		unsigned long seconds = (unsigned long)now();
+		root["dateRecorded"] = seconds;
 	}
 }
 
@@ -222,13 +233,13 @@ void checkConditionsForRelays()
 	// LEDs
 	if (isDayTime())
 	{
-		Serial.println("it's day time");
+		//Serial.println("it's day time");
 		turnRelayOn(mainLED);
 		digitalWrite(ledFan, HIGH);
 	}
 	else
 	{
-		Serial.println("it's night time");
+		//Serial.println("it's night time");
 		turnRelayOff(mainLED);
 		digitalWrite(ledFan, LOW);
 	}
@@ -285,9 +296,7 @@ bool shouldHeatLampBeOn()
 
 bool isDayTime()
 {
-	int theHour = hour();
-	Serial.println("Hour is " + theHour);
-	return theHour > 8 && theHour < 18;
+	return hour() > 8 && hour() < 18;
 }
 
 bool isBonsaiWateringTime()
