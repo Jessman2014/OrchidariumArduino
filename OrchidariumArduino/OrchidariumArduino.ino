@@ -122,8 +122,8 @@ void readSensor()
 	tempC = sht15.readTemperatureC();
 	tempF = sht15.readTemperatureF();
 	humidity = sht15.readHumidity();
-	root["tempF"] = tempF;
-	root["humidity"] = humidity;
+	root["TemperatureF"] = tempF;
+	root["Humidity"] = humidity;
 	/*Serial.print(" Temp = ");
 	Serial.print(tempF);
 	Serial.print("F, ");
@@ -139,7 +139,7 @@ void readSensor()
 
 	/* Display the results (light is measured in lux) */
 		light = event.light;
-		root["light"] = light;
+		root["Lux"] = light;
 	//if (event.light)
 	//{
 	//	Serial.print(event.light); Serial.println(" lux");
@@ -220,15 +220,27 @@ void checkConditionsForRelays()
 
 	// heat lamp
 	if (shouldHeatLampBeOn())
+	{
 		turnRelayOn(heatLamp);
+		root["HeatLampOn"] = true;
+	}
 	else
+	{
 		turnRelayOff(heatLamp);
+		root["HeatLampOn"] = false;
+	}
 
 	// warm mist
 	if (isRelayOn(coolMist) && isRelayOn(heatLamp))
+	{
 		turnRelayOn(warmMist);
+		root["BoilerOn"] = true;
+	}
 	else
+	{
 		turnRelayOff(warmMist);
+		root["BoilerOn"] = false;
+	}
 
 	// LEDs
 	if (isDayTime())
@@ -236,12 +248,28 @@ void checkConditionsForRelays()
 		//Serial.println("it's day time");
 		turnRelayOn(mainLED);
 		digitalWrite(ledFan, HIGH);
+		root["MainLED"] = true;
+		root["SecondaryLEDs"] = true;
 	}
 	else
 	{
 		//Serial.println("it's night time");
 		turnRelayOff(mainLED);
 		digitalWrite(ledFan, LOW);
+		root["MainLED"] = false;
+		root["SecondaryLEDs"] = false;
+	}
+
+	// bonsai pump
+	if (isBonsaiWateringTime())
+	{
+		turnRelayOn(bonsai);
+		root["BonsaiOn"] = true;
+	}
+	else
+	{
+		turnRelayOff(bonsai);
+		root["BonsaiOn"] = false;
 	}
 }
 
@@ -343,10 +371,12 @@ void turnCoolMistOn()
 {
 	turnRelayOn(coolMist);
 	digitalWrite(coolMistFan, HIGH);
+	root["FoggerOn"] = true;
 }
 
 void turnCoolMistOff()
 {
 	turnRelayOff(coolMist);
 	digitalWrite(coolMistFan, LOW);
+	root["FoggerOn"] = false;
 }
