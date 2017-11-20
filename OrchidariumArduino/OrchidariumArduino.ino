@@ -24,17 +24,17 @@ float tempF = 0;
 float humidity = 0;
 float light = 0;
 int relayPwr = A0;
-int mainLED = 5;
+//int mainLED = 5;
 int coolMist = 3;
-int coolMistFan = 9;
-int warmMist = 6;
-int heatLamp = 7;
-int bonsai = 8;
-int ledFan = 10;
+//int coolMistFan = 9;
+//int warmMist = 6;
+//int heatLamp = 7;
+//int bonsai = 8;
+//int ledFan = 10;
 
 //Create an instance of the SHT1X sensor
 SHT1x sht15(12, 13);//Data, SCK
-Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
+//Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
 StaticJsonBuffer<200> jsonBuffer;
 JsonObject& root = jsonBuffer.createObject();
 
@@ -45,19 +45,24 @@ void setup()
 	digitalWrite(relayPwr, HIGH);
 
 	//Serial.println("Light Sensor Test"); Serial.println("");
+  //TODO remove above serial println
 
 	// Initialise the light sensor
-	tsl.begin();
+	//tsl.begin();
+  //Serial.println("after ts1 begin");
+  //TODO remove above serial println
 	/*if (!tsl.begin())
 	{
-		// There was a problem detecting the TSL2561 ... check your connections 
+		// There was a problem detecting the TSL2561 ... check your connections
 		Serial.print("Ooops, no TSL2561 detected ... Check your wiring or I2C ADDR!");
 		while (1);
 	}
 	*/
 
 	/* Setup the sensor gain and integration time */
-	configureSensor();
+	//configureSensor();
+  //Serial.println("after configuration of sensors");
+  //TODO remove above serial println
 	configureRelaysAndFans();
 }
 
@@ -71,10 +76,10 @@ void configureSensor()
 	/* You can also manually set the gain or enable auto-gain support */
 	// tsl.setGain(TSL2561_GAIN_1X);      /* No gain ... use in bright light to avoid sensor saturation */
 	// tsl.setGain(TSL2561_GAIN_16X);     /* 16x gain ... use in low light to boost sensitivity */
-	tsl.enableAutoRange(true);            /* Auto-gain ... switches automatically between 1x and 16x */
+	//USE THIS tsl.enableAutoRange(true);            /* Auto-gain ... switches automatically between 1x and 16x */
 
 										  /* Changing the integration time gives you better sensor resolution (402ms = 16-bit data) */
-	tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_13MS);
+	//USE THIS tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_13MS);
 	/* fast but low resolution */
 	// tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_101MS);  /* medium resolution and speed   */
 	// tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_402MS);  /* 16-bit data but slowest conversions */
@@ -91,18 +96,18 @@ void configureRelaysAndFans()
 {
 	//pinMode(mainLED, OUTPUT);
 	pinMode(coolMist, OUTPUT);
-	pinMode(coolMistFan, OUTPUT);
+	/*pinMode(coolMistFan, OUTPUT);
 	pinMode(warmMist, OUTPUT);
 	pinMode(heatLamp, OUTPUT);
 	pinMode(bonsai, OUTPUT);
-	pinMode(ledFan, OUTPUT);
+	pinMode(ledFan, OUTPUT);*/
 
 	//make sure relays are off at start
-	turnRelayOff(mainLED);
+	//turnRelayOff(mainLED);
 	turnRelayOff(coolMist);
-	turnRelayOff(warmMist);
+	/*turnRelayOff(warmMist);
 	turnRelayOff(heatLamp);
-	turnRelayOff(bonsai);
+	turnRelayOff(bonsai);*/
 }
 
 //-------------------------------------------------------------------------------------------
@@ -124,22 +129,14 @@ void readSensor()
 	humidity = sht15.readHumidity();
 	root["TemperatureF"] = tempF;
 	root["Humidity"] = humidity;
-	/*Serial.print(" Temp = ");
-	Serial.print(tempF);
-	Serial.print("F, ");
-	Serial.print(tempC);
-	Serial.println("C");
-	Serial.print(" Humidity = ");
-	Serial.print(humidity);
-	Serial.println("%");*/
 
 	/* Get a new sensor event */
-	sensors_event_t event;
-	tsl.getEvent(&event);
+	//sensors_event_t event;
+	//tsl.getEvent(&event);
 
 	/* Display the results (light is measured in lux) */
-		light = event.light;
-		root["Lux"] = light;
+	//light = event.light;
+	root["Lux"] = 0; //light;
 	//if (event.light)
 	//{
 	//	Serial.print(event.light); Serial.println(" lux");
@@ -219,7 +216,7 @@ void checkConditionsForRelays()
 		turnCoolMistOff();
 
 	// heat lamp
-	if (shouldHeatLampBeOn())
+	/*if (shouldHeatLampBeOn())
 	{
 		turnRelayOn(heatLamp);
 		root["HeatLampOn"] = true;
@@ -271,6 +268,7 @@ void checkConditionsForRelays()
 		turnRelayOff(bonsai);
 		root["BonsaiOn"] = false;
 	}
+ */
 }
 
 
@@ -305,20 +303,13 @@ bool shouldCoolMistHumidifierBeOn()
 
 bool shouldHeatLampBeOn()
 {
-	if (isDayTime())
+	if (isRelayOn(heatLamp))
 	{
-		if (isRelayOn(heatLamp))
-		{
-			return !isWarmEnough();
-		}
-		else
-		{
-			return isCold();
-		}
+		return !isWarmEnough();
 	}
 	else
 	{
-		return false;
+		return isCold();
 	}
 }
 
@@ -344,12 +335,22 @@ bool isBonsaiWateringTime()
 
 bool isWarmEnough()
 {
-	return tempF > 77;
+	if (isDayTime()) {
+		return tempF > 77;
+	}
+	else {
+		return tempF > 67;
+	}
 }
 
 bool isCold()
 {
-	return tempF < 73;
+	if (isDayTime()) {
+		return tempF < 73;
+	}
+	else {
+		return tempF < 63;
+	}
 }
 
 void turnRelayOn(int pinNum)
@@ -370,13 +371,13 @@ bool isRelayOn(int pinNum)
 void turnCoolMistOn()
 {
 	turnRelayOn(coolMist);
-	digitalWrite(coolMistFan, HIGH);
+	//digitalWrite(coolMistFan, HIGH);
 	root["FoggerOn"] = true;
 }
 
 void turnCoolMistOff()
 {
 	turnRelayOff(coolMist);
-	digitalWrite(coolMistFan, LOW);
+	//digitalWrite(coolMistFan, LOW);
 	root["FoggerOn"] = false;
 }
