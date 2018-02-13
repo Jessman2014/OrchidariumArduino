@@ -1,18 +1,9 @@
-/******************************************************************************
-SHT15 Example
-
-Connections:
-GND  -> A2
-Vcc  -> A3
-DATA -> A4
-SCK  -> A5
-
-******************************************************************************/
 #include <SHT1X.h>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_TSL2561_U.h>
 #include <TimeLib.h>
+#include <DS3232RTC.h>
 #include <ArduinoJson.h>
 
 #define TIME_HEADER  "T"   // Header tag for serial time sync message
@@ -23,14 +14,28 @@ float tempC = 0;
 float tempF = 0;
 float humidity = 0;
 float light = 0;
+float oldTempF = 0;
+float oldHumidity = 0;
+float oldLight = 0;
+bool valuesChanged = false;
+bool justSetTime = false;
+
 int relayPwr = A0;
-//int mainLED = 5;
-int coolMist = 3;
-//int coolMistFan = 9;
-//int warmMist = 6;
-//int heatLamp = 7;
-//int bonsai = 8;
-//int ledFan = 10;
+
+int coolMist = 2; //1
+int resevoirRefill = 3; //2
+int warmMist = 5; //3
+int heater = 4; //4
+int fogger = 7; //5
+int mister = 6; //6
+int twoDayWater = 9; //7
+int mainLED = 8; //8
+
+int ledFan = 10;
+
+//Timers
+unsigned long warmMistTimer = 0; 
+unsigned long twoDayWaterTimer = 0;
 
 //Create an instance of the SHT1X sensor
 SHT1x sht15(12, 13);//Data, SCK
@@ -43,7 +48,13 @@ void setup()
 	Serial.begin(9600); // Open serial connection to report values to host
 	pinMode(relayPwr, OUTPUT);
 	digitalWrite(relayPwr, HIGH);
+  setSyncProvider(RTC.get);
+  if(timeStatus()!= timeSet) 
+     Serial.println("Unable to sync with the RTC");
+  //else
+    // Serial.println("RTC has set the system time");  
 
+     
 	//Serial.println("Light Sensor Test"); Serial.println("");
   //TODO remove above serial println
 
@@ -94,20 +105,26 @@ void configureSensor()
 
 void configureRelaysAndFans()
 {
-	//pinMode(mainLED, OUTPUT);
 	pinMode(coolMist, OUTPUT);
-	/*pinMode(coolMistFan, OUTPUT);
+	pinMode(resevoirRefill, OUTPUT);
 	pinMode(warmMist, OUTPUT);
-	pinMode(heatLamp, OUTPUT);
-	pinMode(bonsai, OUTPUT);
-	pinMode(ledFan, OUTPUT);*/
+	pinMode(heater, OUTPUT);
+	pinMode(fogger, OUTPUT);
+  pinMode(mister, OUTPUT);
+  pinMode(twoDayWater, OUTPUT);
+	pinMode(mainLED, OUTPUT);
+  pinMode(ledFan, OUTPUT);
 
 	//make sure relays are off at start
-	//turnRelayOff(mainLED);
-	turnRelayOff(coolMist);
-	/*turnRelayOff(warmMist);
-	turnRelayOff(heatLamp);
-	turnRelayOff(bonsai);*/
+	digitalWrite(coolMist, HIGH);
+ digitalWrite(resevoirRefill, HIGH);
+ digitalWrite(warmMist, HIGH);
+ digitalWrite(heater, HIGH);
+ digitalWrite(fogger, HIGH);
+ digitalWrite(mister, HIGH);
+ digitalWrite(twoDayWater, HIGH);
+ digitalWrite(mainLED, HIGH);
+  digitalWrite(ledFan, LOW);
 }
 
 //-------------------------------------------------------------------------------------------
@@ -116,19 +133,21 @@ void loop()
 	readSensor();
 	findTime();
 	checkConditionsForRelays();
-	root.printTo(Serial);
-	Serial.println();
+  if (valuesChanged && timeStatus() == timeSet){
+    root.printTo(Serial);
+    Serial.println();
+  }
 	delay(5000);
 }
 //-------------------------------------------------------------------------------------------
 void readSensor()
 {
+  valuesChanged = false;
 	// Read values from the sensor
 	tempC = sht15.readTemperatureC();
 	tempF = sht15.readTemperatureF();
 	humidity = sht15.readHumidity();
-	root["TemperatureF"] = tempF;
-	root["Humidity"] = humidity;
+
 
 	/* Get a new sensor event */
 	//sensors_event_t event;
@@ -136,7 +155,6 @@ void readSensor()
 
 	/* Display the results (light is measured in lux) */
 	//light = event.light;
-	root["Lux"] = 0; //light;
 	//if (event.light)
 	//{
 	//	Serial.print(event.light); Serial.println(" lux");
@@ -147,22 +165,36 @@ void readSensor()
 	//	and no reliable data could be generated! */
 	//	Serial.println("Sensor overload");
 	//}
+
+  if (abs(oldTempF - tempF) > 2)
+  {
+    valuesChanged = true;
+    oldTempF = tempF;
+  }
+
+  if (abs(oldHumidity - humidity) > 3)
+  {    
+    valuesChanged = true;
+    oldHumidity = humidity;
+  }
+
+    root["TemperatureF"] = tempF;
+    root["Humidity"] = humidity;
+    root["Lux"] = 0;
 }
 
 void findTime()
 {
-	if (Serial.available())
-	{
-		processSyncMessage();
-	}
 	if (timeStatus() == timeNotSet)
-		Serial.println("waiting for sync message");
-	else
-	{
-		//digitalClockDisplay();
-		unsigned long seconds = (unsigned long)now();
-		root["dateRecorded"] = seconds;
-	}
+ {
+		Serial.println("Unable to sync with the RTC");
+    setTime(1357041600); // Jan 1 2013
+    delay(5000);
+ }
+  else
+  {
+    root["dateRecorded"] = (unsigned long)now();
+  }
 }
 
 void digitalClockDisplay()
@@ -188,87 +220,72 @@ void printDigits(int digits) {
 	Serial.print(digits);
 }
 
-void processSyncMessage()
-{
-	unsigned long pctime;
-	const unsigned long DEFAULT_TIME = 1357041600; // Jan 1 2013
-
-	if (Serial.find(TIME_HEADER)) {
-		pctime = Serial.parseInt();
-		if (pctime >= DEFAULT_TIME) { // check the integer is a valid time (greater than Jan 1 2013)
-			setTime(pctime); // Sync Arduino clock to the time received on the serial port
-		}
-	}
-}
-
-time_t requestSync()
-{
-	Serial.write(TIME_REQUEST);
-	return 0; // the time will be sent later in response to serial mesg
-}
-
 void checkConditionsForRelays()
 {
 	// cool mist humidifier
-	if (shouldCoolMistHumidifierBeOn())
-		turnCoolMistOn();
-	else
-		turnCoolMistOff();
-
-	// heat lamp
-	/*if (shouldHeatLampBeOn())
-	{
-		turnRelayOn(heatLamp);
-		root["HeatLampOn"] = true;
+	if (shouldCoolMistHumidifierBeOn() && !isRelayOn(coolMist)) {
+    turnRelayOn(coolMist, "CoolMist");
 	}
-	else
+	else if (!shouldCoolMistHumidifierBeOn() && isRelayOn(coolMist)) {
+    turnRelayOff(coolMist, "CoolMist");
+	}
+		
+	// heater
+	if (shouldHeaterBeOn() && !isRelayOn(heater))
 	{
-		turnRelayOff(heatLamp);
-		root["HeatLampOn"] = false;
+		turnRelayOn(heater, "Heater");
+	}
+	else if (!shouldHeaterBeOn() && isRelayOn(heater))
+	{
+		turnRelayOff(heater, "Heater");
 	}
 
 	// warm mist
-	if (isRelayOn(coolMist) && isRelayOn(heatLamp))
+	if (shouldWarmMistHumidifierBeOn() && !isRelayOn(warmMist))
 	{
-		turnRelayOn(warmMist);
-		root["BoilerOn"] = true;
+		turnRelayOn(warmMist, "WarmMist");
+		warmMistTimer = (unsigned long)now();
 	}
-	else
+	else if (!shouldWarmMistHumidifierBeOn() && isRelayOn(warmMist))
 	{
-		turnRelayOff(warmMist);
-		root["BoilerOn"] = false;
+		turnRelayOff(warmMist, "WarmMist");
 	}
+ 
+  // fogger and mister
+  if (isFoggingTime() && !isRelayOn(fogger))
+  {
+    turnRelayOn(fogger, "Fogger");
+    turnRelayOn(mister, "Mister");
+  }
+  else if (!isFoggingTime() && isRelayOn(fogger))
+  {
+    turnRelayOff(fogger, "Fogger");
+    turnRelayOff(mister, "Mister");
+  }
 
-	// LEDs
-	if (isDayTime())
-	{
-		//Serial.println("it's day time");
-		turnRelayOn(mainLED);
-		digitalWrite(ledFan, HIGH);
-		root["MainLED"] = true;
-		root["SecondaryLEDs"] = true;
-	}
-	else
-	{
-		//Serial.println("it's night time");
-		turnRelayOff(mainLED);
-		digitalWrite(ledFan, LOW);
-		root["MainLED"] = false;
-		root["SecondaryLEDs"] = false;
-	}
+  // two day watering
+  if (isTwoDayWateringTime() && !isRelayOn(twoDayWater))
+  {
+    turnRelayOn(twoDayWater, "TwoDayWater");
+  }
+  else if (!isTwoDayWateringTime() && isRelayOn(twoDayWater))
+  {
+    turnRelayOff(twoDayWater, "TwoDayWater");
+  }
 
-	// bonsai pump
-	if (isBonsaiWateringTime())
-	{
-		turnRelayOn(bonsai);
-		root["BonsaiOn"] = true;
-	}
-	else
-	{
-		turnRelayOff(bonsai);
-		root["BonsaiOn"] = false;
-	}
- */
+  // LEDs
+  if (isDayTime() && !isRelayOn(mainLED))
+  {
+    turnRelayOn(mainLED, "MainLED");
+    digitalWrite(ledFan, HIGH);
+    deviceCommandPrint("TurnOn", "SecondaryLED");
+  }
+  else if (!isDayTime() && isRelayOn(mainLED))
+  {
+    turnRelayOff(mainLED, "MainLED");
+    digitalWrite(ledFan, LOW);
+    deviceCommandPrint("TurnOff", "SecondaryLED");
+  }
 }
 
 
@@ -277,8 +294,6 @@ void checkConditionsForRelays()
 
 bool shouldCoolMistHumidifierBeOn()
 {
-	if (isDayTime())
-	{
 		if (isRelayOn(coolMist))
 		{
 			return humidity < 80;
@@ -287,23 +302,17 @@ bool shouldCoolMistHumidifierBeOn()
 		{
 			return humidity < 70;
 		}
-	}
-	else
-	{
-		if (isRelayOn(coolMist))
-		{
-			return humidity < 60;
-		}
-		else
-		{
-			return humidity < 50;
-		}
-	}
 }
 
-bool shouldHeatLampBeOn()
+bool shouldWarmMistHumidifierBeOn()
 {
-	if (isRelayOn(heatLamp))
+  return (shouldCoolMistHumidifierBeOn() && shouldHeaterBeOn()) || 
+  (isRelayOn(warmMist) && (unsigned long)now() - warmMistTimer < 900);
+}
+
+bool shouldHeaterBeOn()
+{
+	if (isRelayOn(heater))
 	{
 		return !isWarmEnough();
 	}
@@ -321,6 +330,16 @@ bool isDayTime()
 bool isBonsaiWateringTime()
 {
 	return weekday() == 3 && hour() == 20 && minute() == 0;
+}
+
+bool isTwoDayWateringTime()
+{
+  return (weekday() % 2) == 0 && hour() == 12 && minute() == 0;
+}
+
+bool isFoggingTime()
+{
+  return hour() == 12 && minute() > 0 && minute() < 10;
 }
 
 //bool isDry()
@@ -353,31 +372,25 @@ bool isCold()
 	}
 }
 
-void turnRelayOn(int pinNum)
+void turnRelayOn(int pinNum, String relayName)
 {
 	digitalWrite(pinNum, LOW);
+  deviceCommandPrint("TurnOn", relayName);
 }
 
-void turnRelayOff(int pinNum)
+void turnRelayOff(int pinNum, String relayName)
 {
 	digitalWrite(pinNum, HIGH);
+  deviceCommandPrint("TurnOff", relayName);
+}
+
+void deviceCommandPrint(String action, String device)
+{
+  if (timeStatus() == timeSet)
+    Serial.println("{\"Message\":\"" + action + device + "\"}");
 }
 
 bool isRelayOn(int pinNum)
 {
 	return digitalRead(pinNum) == LOW;
-}
-
-void turnCoolMistOn()
-{
-	turnRelayOn(coolMist);
-	//digitalWrite(coolMistFan, HIGH);
-	root["FoggerOn"] = true;
-}
-
-void turnCoolMistOff()
-{
-	turnRelayOff(coolMist);
-	//digitalWrite(coolMistFan, LOW);
-	root["FoggerOn"] = false;
 }
