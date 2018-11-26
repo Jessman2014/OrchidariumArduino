@@ -5,18 +5,23 @@
 #include <TimeLib.h>
 #include <DS3232RTC.h>
 #include <ArduinoJson.h>
+#include <OneWire.h> 
+#include <DallasTemperature.h>
 
 #define TIME_HEADER  "T"   // Header tag for serial time sync message
 #define TIME_REQUEST  7    // ASCII bell character requests a time sync message 
+#define ONE_WIRE_BUS 10
 
 //variables for storing values
 float tempC = 0;
 float tempF = 0;
 float humidity = 0;
+float shrimpTempF = 0;
 float light = 0;
 float oldTempF = 0;
 float oldHumidity = 0;
 float oldLight = 0;
+float oldShrimpTempF = 0;
 bool valuesChanged = false;
 bool justSetTime = false;
 
@@ -42,6 +47,12 @@ SHT1x sht15(12, 13);//Data, SCK
 //Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
 StaticJsonBuffer<200> jsonBuffer;
 JsonObject& root = jsonBuffer.createObject();
+
+// Setup a oneWire instance to communicate with any OneWire devices  
+// (not just Maxim/Dallas temperature ICs) 
+OneWire oneWire(ONE_WIRE_BUS); 
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
 
 void setup()
 {
@@ -75,6 +86,9 @@ void setup()
   //Serial.println("after configuration of sensors");
   //TODO remove above serial println
 	configureRelaysAndFans();
+
+ // Start up the one wire temperature probe library 
+  sensors.begin(); 
 }
 
 /**************************************************************************/
@@ -148,6 +162,8 @@ void readSensor()
 	tempF = sht15.readTemperatureF();
 	humidity = sht15.readHumidity();
 
+  sensors.requestTemperatures();
+  shrimpTempF = sensors.getTempFByIndex(0);
 
 	/* Get a new sensor event */
 	//sensors_event_t event;
@@ -178,9 +194,16 @@ void readSensor()
     oldHumidity = humidity;
   }
 
+  if (abs(oldShrimpTempF - shrimpTempF) > 2)
+  {
+    valuesChanged = true;
+    oldShrimpTempF = shrimpTempF;
+  }
+
     root["TemperatureF"] = tempF;
     root["Humidity"] = humidity;
     root["Lux"] = 0;
+    root["ShrimpTempF"] = shrimpTempF;
 }
 
 void findTime()
